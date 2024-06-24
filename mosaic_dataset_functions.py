@@ -1,4 +1,16 @@
 import arcpy
+import os
+import re
+
+def create_fileGDB(location, name_fgdb):
+    try: 
+
+        arcpy.management.CreateFileGDB(location, name_fgdb)
+        arcpy.AddMessage("FileGeoDatabase criado com sucesso.")
+    except arcpy.ExecuteError as ee:
+        arcpy.AddError(f"Erro do ArcGIS: {ee}")
+    except Exception as e:
+        arcpy.AddError(f"Ocorreu um erro no create_fileGDB: {str(e)}")   
 
 def create_mosaic_dataset(workspace, name, raster_path):
     try:
@@ -39,15 +51,18 @@ def create_mosaic_dataset(workspace, name, raster_path):
     arcpy.AddMessage("Processo de criação de Mosaic Dataset concluído.")
         
 
-def add_rasters_to_mosaic_dataset(mdname, raster_path):
+def add_rasters_to_mosaic_dataset(mdname, raster_folder):
+    filter_regex = r"M\d{3}_.*\.tif"
+
     try:
         if arcpy.Exists(mdname):
-            arcpy.AddMessage(f"O Mosaic Dataset '{mdname}' já existe. Adicionando rasters...")
-            arcpy.management.AddRastersToMosaicDataset(mdname, "Raster Dataset", raster_path,
-                                                       duplicate_items_action="Overwrite duplicates",
-                                                       update_cellsize_ranges="UPDATE_CELL_SIZES",
-                                                       update_boundary="UPDATE_BOUNDARY")
-            arcpy.AddMessage("Rasters adicionados com sucesso ao Mosaic Dataset.")
+            arcpy.management.AddRastersToMosaicDataset(mdname, "Raster Dataset", "Folder", raster_folder,
+                                           duplicate_items_action="Overwrite duplicates",
+                                           update_cellsize_ranges="UPDATE_CELL_SIZES",
+                                           update_boundary="UPDATE_BOUNDARY",
+                                           filter=filter_regex)
+
+            arcpy.AddMessage(f"Raster '{filename}' adicionado com sucesso ao Mosaic Dataset.")
         else:
             arcpy.AddError(f"O Mosaic Dataset '{mdname}' não existe. Verifique o caminho ou crie o dataset antes de adicionar rasters.")
 

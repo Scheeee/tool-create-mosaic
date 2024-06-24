@@ -21,6 +21,8 @@ def get_parameter_info():
         displayName="Caminho para o Raster", name="raster_path", datatype="DERasterDataset", parameterType="Required", direction="Input")
     params.append(param)
 
+    param = arcpy.Parameter(displayName="Caminho para o diretório de rasters", name="raster_folder", datatype="Folder", parameterType="Required",direction="Input")
+
     # Parâmetro 4: Executar funções adicionais
     param = arcpy.Parameter(
         displayName="Inserir footprint", name="footprint", datatype="GPBoolean", parameterType="Optional", direction="Input")
@@ -36,20 +38,22 @@ def execute(parameters, messages):
         workspace = arcpy.GetParameterAsText(0)
         md_name = arcpy.GetParameterAsText(1)
         raster_path = arcpy.GetParameterAsText(2)
-        footprint = arcpy.GetParameterAsText(3).lower() == 'true'  
+        raster_folder = arcpy.GetParameterAsText(3)
+        footprint = arcpy.GetParameterAsText(4).lower() == 'true'  
         md_full_path = os.path.join(workspace, md_name)
         name_footprint = os.path.join(md_name, "Footprint")
        # cp_feature_class = "Footprint_CopyFeatures"
         arcpy.AddMessage(f"Workspace: {workspace}")
         arcpy.AddMessage(f"Nome do Mosaic Dataset: {md_name}")
         arcpy.AddMessage(f"Caminho para o Raster: {raster_path}")
+        arcpy.AddMessage(f"Caminho para o Raster: {raster_folder}")
         arcpy.AddMessage(f"Caminho do Mosaico: {md_full_path}")
         arcpy.AddMessage(f"footprint: {footprint}")
                 
         arcpy.AddMessage("0")
         mosaic_dataset_functions.create_mosaic_dataset(workspace, md_name, raster_path)
         arcpy.AddMessage("1")       
-        mosaic_dataset_functions.add_rasters_to_mosaic_dataset(md_full_path, raster_path)
+        mosaic_dataset_functions.add_rasters_to_mosaic_dataset(md_full_path, raster_folder)
         arcpy.AddMessage("2")
         mosaic_dataset_functions.define_overviews(md_full_path)
         arcpy.AddMessage("3") 
