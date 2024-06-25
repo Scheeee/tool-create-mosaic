@@ -2,10 +2,9 @@ import arcpy
 import os
 import re
 
-def create_fileGDB(location, name_fgdb):
+def create_fileGDB(location, fgdb_name):
     try: 
-
-        arcpy.management.CreateFileGDB(location, name_fgdb)
+        arcpy.management.CreateFileGDB(location, fgdb_name)
         arcpy.AddMessage("FileGeoDatabase criado com sucesso.")
     except arcpy.ExecuteError as ee:
         arcpy.AddError(f"Erro do ArcGIS: {ee}")
