@@ -44,8 +44,6 @@ def execute(parameters, messages):
             band = bands_for_nodata_value.getValue(i, 0)  # Primeira coluna é a Band
             no_data_value = bands_for_nodata_value.getValue(i, 1)  # Segunda coluna é o NoDataValue
             no_data_values.append(f"{band} {no_data_value}")
- 
-        # Converter a lista em uma string separada por vírgulas
         bands_for_nodata_value_str = ",".join(no_data_values)
         arcpy.AddMessage(f"Valores de NoData formatados: {bands_for_nodata_value_str}")
  

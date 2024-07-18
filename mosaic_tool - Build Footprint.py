@@ -35,13 +35,11 @@ def execute(parameters, messages):
 
         # Juntar com o footprint
         name_footprint = os.path.join(nome_arquivo, "Footprint" )
-        nome_layer = nome_arquivo + "_MosaicLayer"
- 
-                  
+                       
         arcpy.AddMessage(f"Caminho do Mosaico: {md_layer}")
         arcpy.AddMessage(f"footprint: {footprint}")
         arcpy.AddMessage(f"copy_features: {copy_features}")
-        arcpy.AddMessage(f"layer: {nome_layer}")
+        
         arcpy.AddMessage(f"nome footprint: {name_footprint}")
         
         if footprint:
@@ -50,7 +48,7 @@ def execute(parameters, messages):
             arcpy.AddMessage("footprint concluído com sucesso.")
         if copy_features:
             arcpy.AddMessage("copy_features")
-            mosaic_dataset_functions.copy_features(md_layer, name_footprint, nome_layer) 
+            mosaic_dataset_functions.copy_features(md_layer, name_footprint, nome_arquivo) 
             arcpy.AddMessage("copy_features concluído com sucesso.")
         
     except arcpy.ExecuteError:

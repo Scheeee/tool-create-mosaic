@@ -1,6 +1,13 @@
-import arcpy
+import arcpy 
 import os
-import re
+import logging
+import xml.dom.minidom as DOM
+from lxml import etree
+from arcgis.gis import GIS
+
+log_path = r"C:\Users\sche7824\OneDrive - ITAIPU Binacional\Documentos\ArcGIS\custom_log.log"
+logging.basicConfig(filename=log_path, level=logging.DEBUG, 
+                    format='%(asctime)s %(levelname)s %(message)s')
 
 def create_fileGDB(location, fgdb_name):
     try: 
@@ -104,11 +111,21 @@ def build_footprints(md_layer):
     except Exception as e:
         arcpy.AddError(f"Ocorreu um erro: {str(e)}")
 
-def copy_features(md_layer, footprint, nome_layer):
+def copy_features(md_layer, footprint, md_name):
     try:
+        mxd = arcpy.mp.ArcGISProject("CURRENT")
+        map_obj = mxd.activeMap
+        layer_exists = any(layer.name == md_name for layer in map_obj.listLayers())
 
+        if not layer_exists:
+            # Adicionar a camada de mosaico ao mapa
+            map_obj.addDataFromPath(md_layer)
+            arcpy.AddMessage(f"Camada de mosaico '{md_name}' adicionada ao mapa.")
+
+        # Criar a camada de mosaico
+        arcpy.management.MakeMosaicLayer(md_layer, md_name)
         arcpy.management.MakeMosaicLayer(md_layer)
-        arcpy.management.SelectLayerByAttribute(nome_layer, "NEW_SELECTION", "category = 1")
+        arcpy.management.SelectLayerByAttribute(footprint, "NEW_SELECTION", "category = 1")
         arcpy.management.CopyFeatures(footprint)
         arcpy.AddMessage("As features foram copiadas com sucesso.")
     except arcpy.ExecuteError as ee:
@@ -127,44 +144,157 @@ def define_mosaic_dataset_no_data(md_layer, num_bands, bands_for_nodata_value):
     except Exception as e:
         arcpy.AddError(f"Ocorreu um erro: {str(e)}")
 
-def publish_mosaic_web_layer(md_layer_path, name, summary, tags, portal_folder, server, folder):
+def validate_and_fix_xml(xml_path):
     try:
+        # Carregar o XML
+        parser = etree.XMLParser(remove_blank_text=True, recover=True)
+        tree = etree.parse(xml_path, parser)
+        
+        # Salvar o XML corrigido
+        tree.write(xml_path, pretty_print=True, encoding='utf-8')
+        
+        # Validar o XML corrigido
+        tree = etree.parse(xml_path)
+        logging.info("XML validado com sucesso.")
+        return True
+    except etree.XMLSyntaxError as e:
+        logging.error(f"Erro de sintaxe XML: {str(e)}")
+        return False
+    except Exception as e:
+        logging.error(f"Erro ao processar o XML: {str(e)}")
+        return False
 
-        sharing_draft = arcpy.sharing.CreateSharingDraft("STANDALONE_SERVER", "IMAGE_SERVER", name, md_layer_path)
-        sharing_draft.portalFolder = portal_folder
-        sharing_draft.server = server
-        sharing_draft.folderName = folder
+def publish_mosaic_web_layer(md_layer_path, name, summary, tags, server, folder):
+
+    arcpy.GetActivePortalURL()
+
+    try:
+        logging.info("Iniciando a publicação do serviço de mosaico...")
+        logging.debug(f"Caminho do Mosaic Dataset: {md_layer_path}")
+        logging.debug(f"Nome: {name}")
+        logging.debug(f"Resumo: {summary}")
+        logging.debug(f"Tags: {tags}")
+        logging.debug(f"Server: {server}")
+        logging.debug(f"Pasta no Portal: {folder}")
+        
+
+        outdir = r"C:\Users\sche7824\OneDrive - ITAIPU Binacional\Documentos\ArcGIS\Projects\testeTools\scratch"
+        sddraft_filename = name + ".sddraft"
+        sddraft_output_filename = os.path.join(outdir, sddraft_filename)
+        sd_filename = name + ".sd"
+        sd_output_filename = os.path.join(outdir, sd_filename)
+
+
+        aprx = arcpy.mp.ArcGISProject("CURRENT")
+        m = aprx.listMaps()[0]
+ 
+        logging.info("Criando rascunho de compartilhamento...")
+        sharing_draft = m.getWebLayerSharingDraft("HOSTING_SERVER", "TILE", name)
         sharing_draft.summary = summary
         sharing_draft.tags = tags
-
+        sharing_draft.serviceName = name
      
-        arcpy.AddMessage("Analisando o rascunho do serviço de mosaico...")
-        analysis = sharing_draft.analyze()
-        if analysis['errors'] == {}:
-            arcpy.AddMessage("Análise concluída sem erros. Publicando o serviço...")
+        logging.info("Exportando rascunho para SDDraft...")
+        sharing_draft.exportToSDDraft(sddraft_output_filename)
 
-            
-            arcpy.StageService_server(sharing_draft.filePath, out_folder='.')
+      
+        logging.info("Editando SDDraft para definir configurações de compartilhamento...")
+        docs = DOM.parse(sddraft_output_filename)
+        keys = docs.getElementsByTagName('Key')
+        values = docs.getElementsByTagName('Value')
+ 
+        for i in range(len(keys)):
+             key = keys[i].firstChild.data
+             if key == "PackageUnderMyOrg":
+                 values[i].firstChild.data = "false"
+             elif key == "PackageIsPublic":
+                values[i].firstChild.data = "true"
+             elif key == "PackageShareGroups":
+                values[i].firstChild.data = "false"
 
-            arcpy.UploadServiceDefinition_server(sharing_draft.filePath, server)
-            
-            arcpy.AddMessage("Serviço de mosaico publicado com sucesso.")
+        with open(sddraft_output_filename, 'w') as f:
+             docs.writexml(f)
+        logging.info("SDDraft configurado e salvo.")
+
+        if validate_and_fix_xml(sddraft_output_filename):
+            logging.info("XML é válido e está pronto para uso.")
         else:
-            arcpy.AddWarning(f"A análise do rascunho encontrou os seguintes erros: {analysis['errors']}")
-        
+            logging.info("Falha ao validar o XML com xmllint.")
+
+        logging.info(f"Estagiando o serviço usando o SDDraft em {sddraft_output_filename} e salvando em {sd_output_filename}")
+        arcpy.AddMessage(f"Estagiando o serviço usando o SDDraft em {sddraft_output_filename} e salvando em {sd_output_filename}")
+
+        try:
+            arcpy.server.StageService(sddraft_output_filename, sd_output_filename)
+            logging.info("Estagiamento concluído com sucesso.")
+        except arcpy.ExecuteError as ex:
+            logging.error(f"Erro no estagiamento do serviço: {ex}")
+            arcpy.AddError(f"Erro no estagiamento do serviço: {ex}")
+            raise
+
+        logging.info("Iniciando upload do serviço para o servidor...")
+        arcpy.server.UploadServiceDefinition(sd_output_filename, server)
+        logging.info("Serviço de mosaico publicado com sucesso.")
+
     except Exception as e:
-        arcpy.AddError(f"Erro ao publicar serviço de mosaico: {str(e)}")
+        logging.error(f"Ocorreu um erro: {str(e)}")
+        arcpy.AddError(f"Ocorreu um erro: {str(e)}")
 
 
-def overwrite_mosaic_web_layer(service_name, md_layer_path):
+
+
+
+def overwrite_mosaic_web_layer(service_name, md_layer_path, server_url):
     try:
-       
-        arcpy.server.OverwriteService(service_name, "STANDALONE_SERVER", md_layer_path)
+        # Verificação inicial
+        if not service_name:
+            raise ValueError("Service Name cannot be empty.")
         
-        arcpy.AddMessage(f"Serviço de mosaico '{service_name}' sobrescrito com sucesso.")
+        logging.info("Iniciando a publicação do serviço de mosaico...")
+        logging.debug(f"Caminho do Mosaic Dataset: {md_layer_path}") 
+
+        outdir = r"C:\Users\sche7824\OneDrive - ITAIPU Binacional\Documentos\ArcGIS\Projects\testeTools\scratch"
+        sddraft_filename = service_name + ".sddraft"
+        sddraft_output_filename = os.path.join(outdir, sddraft_filename)
+        sd_filename = service_name + ".sd"
+        sd_output_filename = os.path.join(outdir, sd_filename)
+
+        aprx = arcpy.mp.ArcGISProject("CURRENT")
+        m = aprx.listMaps()[0]
+
+        logging.info("Criando rascunho de compartilhamento...")
+        sharing_draft = m.getWebLayerSharingDraft("HOSTING_SERVER", "TILE", service_name, True)
+        sharing_draft.portalFolder = "MyHostedServices"  # Especifique a pasta no Portal onde o serviço será publicado
+        sharing_draft.summary = "Resumo do serviço de mosaico"
+        sharing_draft.tags = "tags, do, serviço"
+        
+        logging.info("Exportando rascunho para SDDraft...")
+        sharing_draft.exportToSDDraft(sddraft_output_filename)
+
+        logging.info("Iniciando estagiamento do serviço...")
+        arcpy.server.StageService(sddraft_output_filename, sd_output_filename)
+        logging.info("Estagiamento concluído com sucesso.")
+
+        logging.info("Iniciando upload do serviço para o servidor...")
+        arcpy.server.UploadServiceDefinition(sd_output_filename, server_url)
+        logging.info("Serviço de mosaico publicado com sucesso.")
 
     except Exception as e:
-        arcpy.AddError(f"Erro ao sobrescrever serviço de mosaico '{service_name}': {str(e)}")
+        logging.error(f"Ocorreu um erro: {str(e)}")
+
+# Verificação para garantir que o valor está sendo obtido corretamente
+def get_service_name():
+    service_name = arcpy.GetParameterAsText(2)
+    if not service_name:
+        raise ValueError("O nome do serviço não pode estar vazio. Verifique o parâmetro de entrada.")
+    return service_name
+
+
+
+    
+
+
+
 
 
 def publish_footprint_web_layer(footprint_path, name, summary, tags, portal_folder, server, folder):
